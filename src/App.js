@@ -7,7 +7,9 @@ import Register from "./components/Register/Register";
 import Logo from "./components/Logo/Logo";
 import ImageLinkForm from "./components/ImageLinkForm/ImageLinkForm";
 import Rank from "./components/Rank/Rank";
+import Modal from "./components/Modal/Modal";
 import "./App.css";
+import Profile from "./components/Profile/Profile";
 
 const particlesOptions = {
   particles: {
@@ -15,25 +17,26 @@ const particlesOptions = {
       value: 30,
       density: {
         enable: true,
-        value_area: 800
-      }
-    }
-  }
+        value_area: 800,
+      },
+    },
+  },
 };
 
 const initialState = {
   input: "",
   imageUrl: "",
   boxes: [],
-  route: "home",
+  route: "signin",
   isSignedIn: false,
+  isProfileOpen: false,
   user: {
     id: "",
     name: "",
     email: "",
     entries: 0,
-    joined: ""
-  }
+    joined: "",
+  },
 };
 
 class App extends Component {
@@ -41,39 +44,77 @@ class App extends Component {
     super();
     this.state = initialState;
   }
-
-  loadUser = data => {
+  componentDidMount() {
+    const token = window.sessionStorage.getItem("token");
+    if (token) {
+      fetch("http://localhost:3000/signin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token,
+        },
+      })
+        .then((resp) => resp.json())
+        .then((data) => {
+          if (data && data.id) {
+            fetch(`http://localhost:3000/profile/${data.id}`, {
+              method: "get",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: token,
+              },
+            })
+              .then((resp) => resp.json())
+              .then((user) => {
+                if (user && user.email) {
+                  this.loadUser(user);
+                  this.onRouteChange("home");
+                }
+              });
+          }
+        })
+        .catch(console.log);
+    }
+  }
+  loadUser = (data) => {
     this.setState({
       user: {
         id: data.id,
         name: data.name,
         email: data.email,
         entries: data.entries,
-        joined: data.joined
-      }
+        joined: data.joined,
+      },
     });
   };
 
-  calculateFaceLocations = data => {
-    return data.outputs[0].data.regions.map(face => {
-      const clarifaiFace = face.region_info.bounding_box;
-      const image = document.getElementById("inputimage");
-      const width = Number(image.width);
-      const height = Number(image.height);
-      return {
-        leftCol: clarifaiFace.left_col * width,
-        topRow: clarifaiFace.top_row * height,
-        rightCol: width - clarifaiFace.right_col * width,
-        bottomRow: height - clarifaiFace.bottom_row * height
-      };
-    });
+  calculateFaceLocations = (data) => {
+    if(data && data.outputs)
+    {
+      return data.outputs[0].data.regions.map((face) => {
+        const clarifaiFace = face.region_info.bounding_box;
+        const image = document.getElementById("inputimage");
+        const width = Number(image.width);
+        const height = Number(image.height);
+        return {
+          leftCol: clarifaiFace.left_col * width,
+          topRow: clarifaiFace.top_row * height,
+          rightCol: width - clarifaiFace.right_col * width,
+          bottomRow: height - clarifaiFace.bottom_row * height,
+        };
+      });
+    }
+    return;
   };
 
-  displayFaceBox = boxes => {
-    this.setState({ boxes: boxes });
+  displayFaceBox = (boxes) => {
+    if(boxes)
+    {
+      this.setState({ boxes: boxes });
+    }
   };
 
-  onInputChange = event => {
+  onInputChange = (event) => {
     this.setState({ input: event.target.value });
   };
 
@@ -81,53 +122,74 @@ class App extends Component {
     this.setState({ imageUrl: this.state.input });
     fetch("http://localhost:3000/imageurl", {
       method: "post",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: window.sessionStorage.getItem("token"),
+      },
       body: JSON.stringify({
-        input: this.state.input
-      })
+        input: this.state.input,
+      }),
     })
-      .then(response => response.json())
-      .then(response => {
+      .then((response) => response.json())
+      .then((response) => {
         if (response) {
           fetch("http://localhost:3000/image", {
             method: "put",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: window.sessionStorage.getItem("token"),
+            },
             body: JSON.stringify({
-              id: this.state.user.id
-            })
+              id: this.state.user.id,
+            }),
           })
-            .then(response => response.json())
-            .then(count => {
+            .then((response) => response.json())
+            .then((count) => {
               this.setState(Object.assign(this.state.user, { entries: count }));
             })
             .catch(console.log);
         }
         this.displayFaceBox(this.calculateFaceLocations(response));
       })
-      .catch(err => console.log(err));
+      .catch((err) => console.log(err));
   };
 
-  onRouteChange = route => {
+  onRouteChange = (route) => {
     if (route === "signout") {
-      this.setState(initialState);
+      return this.setState(initialState);
     } else if (route === "home") {
       this.setState({ isSignedIn: true });
     }
     this.setState({ route: route });
   };
+  toggleModal = () => {
+    this.setState((prevState) => ({ isProfileOpen: !prevState.isProfileOpen }));
+  };
 
   render() {
-    const { isSignedIn, imageUrl, route, boxes } = this.state;
+    const { isSignedIn, imageUrl, route, boxes, isProfileOpen } = this.state;
     return (
       <div className="App">
         <Particles className="particles" params={particlesOptions} />
         <Navigation
           isSignedIn={isSignedIn}
           onRouteChange={this.onRouteChange}
+          toggleModal={this.toggleModal}
         />
+        {isProfileOpen && (
+          <Modal>
+            <Profile
+              isProfileOpen={isProfileOpen}
+              toggleModal={this.toggleModal}
+              loadUser={this.loadUser}
+              user={this.state.user}
+            />
+          </Modal>
+        )}
         {route === "home" ? (
           <div>
             <Logo />
+
             <Rank
               name={this.state.user.name}
               entries={this.state.user.entries}
